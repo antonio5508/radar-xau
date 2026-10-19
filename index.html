@@ -45,7 +45,7 @@ input[type=text]{width:96px;text-transform:uppercase}
 .chart-head b{font:500 18px var(--f-mono);font-variant-numeric:tabular-nums}
 .legend{display:flex;gap:10px;font-size:12px;color:var(--muted)}
 .legend i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:4px;vertical-align:middle}
-canvas{width:100%;height:190px;display:block}
+canvas{width:100%;height:240px;display:block}
 .sec{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;padding:0 2px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:380px){.grid{grid-template-columns:1fr}.levels{grid-template-columns:1fr}}
@@ -61,6 +61,12 @@ button:focus-visible,.file:focus-within,input:focus-visible,select:focus-visible
 .file input{position:absolute;opacity:0;width:1px;height:1px}
 .help{font-size:13px;color:var(--muted);margin:10px 0 0}
 .err{color:var(--down);font-size:13px;margin-top:8px}
+.spr{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.spr input{font:500 14px var(--f-mono);width:76px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:9px 10px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stats .lv .sub{display:block;font:400 12px var(--f-body);color:var(--muted)}
+#eq{width:100%;height:140px;display:block;margin-top:14px}
+.verdict-line{font-weight:600;margin:12px 0 0;text-wrap:pretty}
 .disc{font-size:12px;color:var(--muted);text-align:center;max-width:46ch;margin:4px auto 0}
 </style>
 
@@ -88,7 +94,7 @@ button:focus-visible,.file:focus-within,input:focus-visible,select:focus-visible
   <section class="panel">
     <div class="chart-head">
       <b id="last">–</b>
-      <div class="legend"><span><i style="background:var(--fg)"></i>Prix</span><span><i style="background:var(--ema50)"></i>EMA 50</span><span><i style="background:var(--ema200)"></i>EMA 200</span></div>
+      <div class="legend"><span><i style="background:var(--up)"></i><i style="background:var(--down);margin-left:-2px"></i>Bougies</span><span><i style="background:var(--ema50)"></i>EMA 50</span><span><i style="background:var(--ema200)"></i>EMA 200</span></div>
     </div>
     <canvas id="cv"></canvas>
   </section>
@@ -110,7 +116,24 @@ button:focus-visible,.file:focus-within,input:focus-visible,select:focus-visible
     <div class="err" id="err" hidden></div>
   </section>
 
-  <p class="disc">Outil d'aide à la décision, pas une prédiction. Il résume ce que disent les indicateurs sur les bougies chargées. Aucun résultat n'est garanti.</p>
+  <section class="panel bt">
+    <div class="sec" style="padding:0 0 10px">Backtest · la stratégie rejouée sur l'historique</div>
+    <p class="help" style="margin:0 0 12px">Rejoue les 8 critères sur environ 10 mois de bougies (jusqu'à 5 000). Entrée à l'ouverture suivante, stop 1,5 ATR, objectif 3 ATR, sortie forcée après 48 bougies. 1 R = la somme risquée sur un trade.</p>
+    <div class="btns">
+      <label class="spr" for="spread">Spread + frais ($)<input type="number" id="spread" value="0.30" step="0.05" min="0" inputmode="decimal"></label>
+      <button id="bt" type="button" class="file primary">Lancer le backtest</button>
+    </div>
+    <div class="err" id="btmsg" hidden style="color:var(--muted)"></div>
+    <div id="btout" hidden>
+      <p class="vsub" id="btmeta" style="margin:14px 0 10px"></p>
+      <div class="stats" id="bttiles"></div>
+      <canvas id="eq" aria-label="Courbe des gains cumulés en R"></canvas>
+      <p id="btverdict" class="verdict-line"></p>
+      <p class="help">Les résultats passés ne garantissent rien. Le backtest ne compte ni le glissement ni les écarts de prix pendant les annonces.</p>
+    </div>
+  </section>
+
+  <p class="disc">Outil d'aide à la décision, pas une prédiction. Il résume ce que disent les indicateurs sur les bougies chargées. Aucun résultat n'est garanti.<br>Version 6</p>
 </div>
 
 <script>
@@ -122,17 +145,20 @@ function ema(a,n){const k=2/(n+1),o=new Array(a.length).fill(null);if(a.length<n
 function rsi(c,n=14){const o=new Array(c.length).fill(null);if(c.length<=n)return o;let g=0,l=0;for(let i=1;i<=n;i++){const d=c[i]-c[i-1];d>0?g+=d:l-=d}g/=n;l/=n;o[n]=l===0?100:100-100/(1+g/l);for(let i=n+1;i<c.length;i++){const d=c[i]-c[i-1];g=(g*(n-1)+Math.max(d,0))/n;l=(l*(n-1)+Math.max(-d,0))/n;o[i]=l===0?100:100-100/(1+g/l)}return o}
 function atr(b,n=14){const o=new Array(b.length).fill(null);const tr=b.map((x,i)=>i?Math.max(x.h-x.l,Math.abs(x.h-b[i-1].c),Math.abs(x.l-b[i-1].c)):x.h-x.l);if(b.length<=n)return o;let s=0;for(let i=1;i<=n;i++)s+=tr[i];o[n]=s/n;for(let i=n+1;i<b.length;i++)o[i]=(o[i-1]*(n-1)+tr[i])/n;return o}
 
-function analyse(b){
-  const c=b.map(x=>x.c),N=c.length-1,px=c[N];
-  const e50=ema(c,50),e200=ema(c,200),r=rsi(c),a=atr(b);
+/* indicateurs calculés une seule fois sur toute la série */
+function indicators(b){const c=b.map(x=>x.c);return {b,c,e50:ema(c,50),e200:ema(c,200),r:rsi(c),a:atr(b)}}
+const hiLo=(b,s,e)=>{let h=-Infinity,l=Infinity;for(let i=s;i<e;i++){if(b[i].h>h)h=b[i].h;if(b[i].l<l)l=b[i].l}return [h,l]};
+function analyse(b){return evalAt(indicators(b),b.length-1)}
+/* lecture des 8 critères à la bougie N, sans regarder le futur */
+function evalAt(I,N){
+  const {b,c,e50,e200,r,a}=I, px=c[N];
   const A=a[N];
   const dec=px>=1000?2:px>=10?3:5, f=v=>v.toFixed(dec);
-  const win=b.slice(-50), res=Math.max(...win.map(x=>x.h)), sup=Math.min(...win.map(x=>x.l));
+  const [res,sup]=hiLo(b,N-49,N+1);
   const up=(res-px)/A, dn=(px-sup)/A;
-  const hh=Math.max(...b.slice(-20).map(x=>x.h)), ll=Math.min(...b.slice(-20).map(x=>x.l));
-  const ph=Math.max(...b.slice(-40,-20).map(x=>x.h)), pl=Math.min(...b.slice(-40,-20).map(x=>x.l));
+  const [hh,ll]=hiLo(b,N-19,N+1), [ph,pl]=hiLo(b,N-39,N-19);
   const roc=(px/c[N-10]-1)*100, slope=(e50[N]-e50[N-10])/A;
-  const atrAvg=a.slice(-50).reduce((s,v)=>s+v,0)/50;
+  let atrAvg=0;for(let i=N-49;i<=N;i++)atrAvg+=a[i];atrAvg/=50;
   const R=[];
   const d=v=>v>0?1:v<0?-1:0;
   R.push({t:"Tendance de fond",s:d(e50[N]-e200[N]),v:`EMA50 ${f(e50[N])} · EMA200 ${f(e200[N])}`});
@@ -179,9 +205,10 @@ function draw(z){
   const cv=$("cv"),dpr=window.devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;
   cv.width=W*dpr;cv.height=H*dpr;const g=cv.getContext("2d");g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,W,H);
   const cs=getComputedStyle(document.documentElement),col=n=>cs.getPropertyValue(n).trim();
-  const n=Math.min(120,z.c.length),s=z.c.length-n;
+  const n=Math.min(W<500?60:90,z.c.length),s=z.c.length-n;
   const series=[z.c,z.e50,z.e200].map(a=>a.slice(s));
-  const vals=series.flat().filter(v=>v!=null).concat([z.sup,z.res]);
+  const cand=bars.slice(s);
+  const vals=series.slice(1).flat().filter(v=>v!=null).concat([z.sup,z.res],cand.map(b=>b.h),cand.map(b=>b.l));
   let mn=Math.min(...vals),mx=Math.max(...vals);const pad=(mx-mn)*.06;mn-=pad;mx+=pad;
   const L=4,Rr=W-60,x=i=>L+i*(Rr-L)/(n-1),y=v=>H-6-(v-mn)/(mx-mn)*(H-12);
   g.font="11px "+col("--f-mono");g.fillStyle=col("--muted");g.strokeStyle=col("--line");g.lineWidth=1;
@@ -189,10 +216,21 @@ function draw(z){
   g.setLineDash([4,4]);
   [[z.res,"--down"],[z.sup,"--up"]].forEach(([v,c])=>{g.strokeStyle=col(c);g.beginPath();g.moveTo(L,y(v));g.lineTo(Rr,y(v));g.stroke()});
   g.setLineDash([]);
-  [[series[2],"--ema200",1.5],[series[1],"--ema50",1.5],[series[0],"--fg",2]].forEach(([a,c,w])=>{
+  /* bougies : mèche haut-bas, corps ouverture-clôture */
+  const bw=Math.max(2,(Rr-L)/n*0.62);
+  cand.forEach((b,i)=>{
+    const up=b.c>=b.o, cx=x(i);
+    g.strokeStyle=g.fillStyle=col(up?"--up":"--down");g.lineWidth=1;
+    g.beginPath();g.moveTo(cx,y(b.h));g.lineTo(cx,y(b.l));g.stroke();
+    const top=y(Math.max(b.o,b.c)),bot=y(Math.min(b.o,b.c));
+    g.fillRect(cx-bw/2,top,bw,Math.max(1,bot-top));
+  });
+  [[series[2],"--ema200",1.6],[series[1],"--ema50",1.6]].forEach(([a,c,w])=>{
     g.strokeStyle=col(c);g.lineWidth=w;g.beginPath();let st=false;
     a.forEach((v,i)=>{if(v==null)return;st?g.lineTo(x(i),y(v)):(g.moveTo(x(i),y(v)),st=true)});g.stroke()});
-  g.fillStyle=col("--gold");g.beginPath();g.arc(x(n-1),y(z.px),4,0,7);g.fill();
+  /* prix actuel : ligne pointillée dorée */
+  g.setLineDash([2,3]);g.strokeStyle=col("--gold");g.lineWidth=1;
+  g.beginPath();g.moveTo(L,y(z.px));g.lineTo(Rr,y(z.px));g.stroke();g.setLineDash([]);
 }
 
 /* ---------- données ---------- */
@@ -230,7 +268,7 @@ $("file").addEventListener("change",e=>{
   rd.onload=()=>{
     const b=parse(rd.result);
     if(b.length<220){$("err").textContent=`Seulement ${b.length} bougies lues. Il en faut au moins 220 pour l'EMA 200 : exporte une période plus longue.`;$("err").hidden=false;return}
-    bars=b;$("err").hidden=true;clearTimeout(timer);timer=null;
+    bars=b;csvBars=b;$("err").hidden=true;clearTimeout(timer);timer=null;
     const m=fl.name.match(/^([A-Z0-9.]{3,12})/i);if(m)$("sym").value=m[1].toUpperCase();
     $("src").innerHTML=`<b>Données réelles :</b> ${fl.name} · ${b.length} bougies. Analyse sur la dernière bougie du fichier.`;
     render();
@@ -242,21 +280,37 @@ const TF={M15:"15min",H1:"1h",H4:"4h",D1:"1day"};
 let timer=null;
 function store(k,v){try{v===undefined?v=localStorage.getItem(k):localStorage.setItem(k,v)}catch(e){}return v}
 function apiSymbol(s){s=s.toUpperCase().replace(/[^A-Z]/g,"");return s.length===6?s.slice(0,3)+"/"+s.slice(3):s}
-async function live(){
+function needKey(){
   const key=$("key").value.trim();
-  if(!key){$("err").textContent="Entre ta clé API Twelve Data (gratuite sur twelvedata.com).";$("err").hidden=false;return}
-  store("radar_key",key);
+  if(!key){$("err").textContent="Entre ta clé API Twelve Data (gratuite sur twelvedata.com).";$("err").hidden=false;return null}
+  store("radar_key",key);return key;
+}
+async function getBars(key,size){
   const sym=apiSymbol($("sym").value), iv=TF[$("tf").value];
-  $("src").innerHTML=`<b>Chargement…</b> ${sym} · ${$("tf").value}`;
+  const r=await fetch(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=${iv}&outputsize=${size}&timezone=UTC&apikey=${encodeURIComponent(key)}`);
+  const j=await r.json();
+  if(j.status==="error"||!j.values)throw new Error(j.message||"Réponse vide");
+  /* or fermé du vendredi 21h au dimanche 22h GMT : on retire ces bougies en intraday */
+  const intraday=iv!=="1day";
+  const open=dt=>{const d=new Date(dt.replace(" ","T")+"Z"),w=d.getUTCDay(),h=d.getUTCHours();
+    return !(w===6||(w===0&&h<22)||(w===5&&h>=21))};
+  const b=j.values.slice().reverse().filter(v=>!intraday||open(v.datetime))
+    .map(v=>({o:+v.open,h:+v.high,l:+v.low,c:+v.close,t:v.datetime})).filter(x=>x.h>x.l);
+  /* flux figé : bougies dont l'amplitude est < 15 % de l'amplitude médiane */
+  const med=b.map(x=>x.h-x.l).sort((p,q)=>p-q)[Math.floor(b.length/2)]||0;
+  const before=b.length;
+  for(let i=b.length-1;i>=0;i--)if(b[i].h-b[i].l<med*0.15)b.splice(i,1);
+  return {b,sym,j,dropped:before-b.length};
+}
+async function live(){
+  const key=needKey();if(!key)return;
+  $("src").innerHTML=`<b>Chargement…</b> ${apiSymbol($("sym").value)} · ${$("tf").value}`;
   try{
-    const r=await fetch(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=${iv}&outputsize=320&apikey=${encodeURIComponent(key)}`);
-    const j=await r.json();
-    if(j.status==="error"||!j.values)throw new Error(j.message||"Réponse vide");
-    const b=j.values.slice().reverse().map(v=>({o:+v.open,h:+v.high,l:+v.low,c:+v.close}));
+    const {b,sym,j,dropped}=await getBars(key,400);
     if(b.length<220)throw new Error(`seulement ${b.length} bougies reçues`);
-    bars=b;$("err").hidden=true;
+    bars=b;csvBars=null;$("err").hidden=true;
     const t=j.values[0].datetime;
-    $("src").innerHTML=`<b>En direct :</b> ${sym} · ${$("tf").value} · dernière bougie ${t} · actualisé à ${new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}`;
+    $("src").innerHTML=`<b>En direct :</b> ${sym} · ${$("tf").value} · dernière bougie ${t.slice(0,16)} GMT · actualisé à ${new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}${dropped?` · ${dropped} bougies figées ignorées`:""}`;
     render();
     clearTimeout(timer);timer=setTimeout(live,120000);
   }catch(e){
@@ -267,7 +321,95 @@ async function live(){
   }
 }
 $("live").addEventListener("click",live);
-$("demo").addEventListener("click",()=>{clearTimeout(timer);demo()});
+
+/* ---------- backtest ---------- */
+/* Entrée à l'ouverture de la bougie suivante, stop 1,5 ATR, objectif 3 ATR, sortie forcée après 48 bougies.
+   Si stop et objectif sont touchés dans la même bougie, on compte le stop (hypothèse prudente). */
+function backtest(b,spread){
+  const I=indicators(b), trades=[], MAXH=48;
+  let i=210;
+  while(i<b.length-1){
+    const z=evalAt(I,i);
+    if(!z.side){i++;continue}
+    const s=z.side, risk=1.5*z.A, e=b[i+1].o, sl=e-s*risk, tp=e+s*2*risk;
+    let exit=null,j=i+1;
+    for(;j<b.length&&j<=i+MAXH;j++){
+      const x=b[j];
+      if(s>0?x.l<=sl:x.h>=sl){exit=sl;break}
+      if(s>0?x.h>=tp:x.l<=tp){exit=tp;break}
+    }
+    if(exit===null){if(j>=b.length)break;j=i+MAXH;exit=b[j].c}
+    const pnl=(exit-e)*s-spread;
+    trades.push({R:pnl/risk,side:s,t:b[i].t||"",bars:j-i});
+    i=j+1;
+  }
+  return trades;
+}
+function stats(tr){
+  const n=tr.length, w=tr.filter(t=>t.R>0);
+  const gp=w.reduce((s,t)=>s+t.R,0), gl=-tr.filter(t=>t.R<=0).reduce((s,t)=>s+t.R,0);
+  let eq=0,peak=0,dd=0,streak=0,worst=0;const curve=[0];
+  tr.forEach(t=>{eq+=t.R;curve.push(eq);peak=Math.max(peak,eq);dd=Math.max(dd,peak-eq);
+    streak=t.R<=0?streak+1:0;worst=Math.max(worst,streak)});
+  return {n,win:n?w.length/n*100:0,pf:gl?gp/gl:Infinity,exp:n?eq/n:0,total:eq,dd,worst,curve,
+    longs:tr.filter(t=>t.side>0).length,shorts:tr.filter(t=>t.side<0).length};
+}
+function drawEquity(curve){
+  const cv=$("eq"),dpr=window.devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;
+  cv.width=W*dpr;cv.height=H*dpr;const g=cv.getContext("2d");g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,W,H);
+  const cs=getComputedStyle(document.documentElement),col=n=>cs.getPropertyValue(n).trim();
+  let mn=Math.min(0,...curve),mx=Math.max(0,...curve);if(mx-mn<1){mx+=.5;mn-=.5}
+  const L=4,Rr=W-44,x=i=>L+i*(Rr-L)/Math.max(1,curve.length-1),y=v=>H-6-(v-mn)/(mx-mn)*(H-12);
+  g.font="11px "+col("--f-mono");g.fillStyle=col("--muted");g.strokeStyle=col("--line");g.lineWidth=1;
+  g.beginPath();g.moveTo(L,y(0));g.lineTo(Rr,y(0));g.stroke();g.fillText("0 R",Rr+6,y(0)+4);
+  if(y(0)-y(mx)>16)g.fillText(`${mx.toFixed(0)} R`,Rr+6,y(mx)+10);
+  if(y(mn)-y(0)>16)g.fillText(`${mn.toFixed(0)} R`,Rr+6,y(mn));
+  const last=curve[curve.length-1];
+  g.strokeStyle=col(last>=0?"--up":"--down");g.lineWidth=2;g.beginPath();
+  curve.forEach((v,i)=>i?g.lineTo(x(i),y(v)):g.moveTo(x(i),y(v)));g.stroke();
+}
+let csvBars=null;
+async function runBacktest(){
+  const out=$("btout"),msg=$("btmsg");
+  const spread=Math.max(0,parseFloat($("spread").value)||0);
+  let b,label;
+  try{
+    if(csvBars&&csvBars.length>=500){b=csvBars;label="export MT5 chargé"}
+    else{
+      const key=needKey();if(!key)return;
+      msg.textContent="Téléchargement de l'historique…";msg.hidden=false;
+      const r=await getBars(key,5000);b=r.b;label=`Twelve Data · ${r.sym}`;
+    }
+    if(b.length<500)throw new Error(`seulement ${b.length} bougies, il en faut au moins 500`);
+    msg.textContent="Calcul en cours…";
+    await new Promise(r=>setTimeout(r,30));
+    const tr=backtest(b,spread), S=stats(tr);
+    const per=b[210].t&&b[b.length-1].t?`${b[210].t.slice(0,10)} → ${b[b.length-1].t.slice(0,10)}`:`${b.length-210} bougies`;
+    const sg=v=>(v>=0?"+":"")+v.toFixed(2);
+    const tiles=[
+      ["Trades",`${S.n} <span class="sub">${S.longs} achats · ${S.shorts} ventes</span>`,""],
+      ["Taux de réussite",S.win.toFixed(1)+" %",""],
+      ["Gain moyen / trade",sg(S.exp)+" R",S.exp>0?"up":"down"],
+      ["Profit factor",S.pf===Infinity?"∞":S.pf.toFixed(2),S.pf>=1?"up":"down"],
+      ["Total",sg(S.total)+" R",S.total>=0?"up":"down"],
+      ["Pire drawdown","−"+S.dd.toFixed(1)+" R","down"],
+      ["Pire série perdante",S.worst+" trades",""],
+      ["Avec 1 % risqué / trade",sg(S.total)+" %",S.total>=0?"up":"down"]
+    ];
+    $("bttiles").innerHTML=tiles.map(([k,v,c])=>`<div class="lv"><small>${k}</small><b class="${c}">${v}</b></div>`).join("");
+    let verdict;
+    if(S.n<30)verdict="Trop peu de trades pour conclure : la règle est très sélective sur cette période.";
+    else if(S.exp>0.1&&S.pf>1.2)verdict="Résultat positif sur cette période. Encourageant, mais à confirmer sur d'autres périodes avant d'y mettre de l'argent.";
+    else if(S.exp>0)verdict="Légèrement positif, mais la marge est mince : un spread plus large ou une mauvaise série peut l'effacer.";
+    else verdict="Négatif : sur cette période, la stratégie perd de l'argent une fois les frais déduits.";
+    $("btverdict").textContent=verdict;
+    $("btmeta").textContent=`${label} · ${$("tf").value} · ${per} · spread ${spread.toFixed(2)} $ par trade`;
+    out.hidden=false;msg.hidden=true;
+    drawEquity(S.curve);
+  }catch(e){msg.textContent="Backtest impossible : "+e.message;msg.hidden=false}
+}
+$("bt").addEventListener("click",runBacktest);
+$("demo").addEventListener("click",()=>{clearTimeout(timer);csvBars=null;demo()});
 $("sym").addEventListener("input",()=>bars.length&&render());
 $("tf").addEventListener("change",()=>timer?live():bars.length&&render());
 $("sym").addEventListener("change",()=>timer&&live());
